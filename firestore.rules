@@ -9,6 +9,10 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "mohabkhaled207@gmail.com";
+    }
     
     function incoming() {
       return request.resource.data;
@@ -16,14 +20,15 @@ service cloud.firestore {
     
     function isValidPortfolioProject(data) {
       return data.keys().hasAll(['title', 'category', 'description', 'url'])
-        && data.keys().hasOnly(['title', 'category', 'description', 'url', 'image', 'createdAt', 'createdBy', 'featured'])
+        && data.keys().hasOnly(['title', 'category', 'description', 'url', 'image', 'createdAt', 'createdBy', 'featured', 'updatedAt', 'updatedBy'])
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 100
         && data.category is string && data.category.size() >= 1 && data.category.size() <= 100
         && data.description is string && data.description.size() >= 1 && data.description.size() <= 1000
         && data.url is string && data.url.size() >= 1 && data.url.size() <= 500 && data.url.matches('^https?://.+')
         && (!('image' in data) || (data.image is string && data.image.size() <= 500))
         && (!('createdBy' in data) || (data.createdBy is string && data.createdBy == request.auth.uid))
-        && (!('featured' in data) || data.featured is bool);
+        && (!('featured' in data) || data.featured is bool)
+        && (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy == request.auth.uid));
     }
 
     // Default deny
@@ -33,9 +38,9 @@ service cloud.firestore {
 
     match /portfolioProjects/{projectId} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidPortfolioProject(incoming());
-      allow update: if isSignedIn() && isValidPortfolioProject(incoming());
-      allow delete: if isSignedIn();
+      allow create: if isAdmin() && isValidPortfolioProject(incoming());
+      allow update: if isAdmin() && isValidPortfolioProject(incoming());
+      allow delete: if isAdmin();
     }
   }
 }
