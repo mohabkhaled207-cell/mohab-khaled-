@@ -26,7 +26,7 @@ service cloud.firestore {
         && data.description is string && data.description.size() >= 1 && data.description.size() <= 1000
         && data.url is string && data.url.size() >= 1 && data.url.size() <= 500 && data.url.matches('^https?://.+')
         && (!('image' in data) || (data.image is string && data.image.size() <= 500))
-        && (!('createdBy' in data) || (data.createdBy is string && data.createdBy == request.auth.uid))
+        && (!('createdBy' in data) || data.createdBy is string)
         && (!('featured' in data) || data.featured is bool)
         && (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy == request.auth.uid));
     }
@@ -38,8 +38,8 @@ service cloud.firestore {
 
     match /portfolioProjects/{projectId} {
       allow read: if true;
-      allow create: if isAdmin() && isValidPortfolioProject(incoming());
-      allow update: if isAdmin() && isValidPortfolioProject(incoming());
+      allow create: if isAdmin() && isValidPortfolioProject(incoming()) && incoming().createdBy == request.auth.uid;
+      allow update: if isAdmin() && isValidPortfolioProject(incoming()) && incoming().createdBy == resource.data.createdBy;
       allow delete: if isAdmin();
     }
   }
