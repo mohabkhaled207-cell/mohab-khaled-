@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ArrowUpLeft, ArrowUpRight, ExternalLink, Facebook, Instagram, Music2, Menu, MessageCircle, Monitor, Palette, Smartphone, X, LockKeyhole, Trash2, LogOut, Save, Languages } from "lucide-react";
 import { auth, db, firebaseReady } from "./firebase";
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+
+const ADMIN_EMAIL = "mohabkhaled207@gmail.com";
 
 const initialProject = {
   title: "SKIP STORE",
@@ -33,7 +35,7 @@ const copy = {
     cancel: "إلغاء", logout: "خروج", empty: "لا توجد مشاريع إضافية حالياً.",
     firebaseMissing: "أضف إعدادات Firebase في ملف البيئة لتفعيل حفظ المشاريع ولوحة الإدارة.",
     loginError: "تعذر تسجيل الدخول. تحقق من بيانات Firebase وحساب الإدارة.",
-    saved: "تم إرسال المشروع إلى Firestore.", delete: "حذف", language: "English"
+    saved: "تم حفظ المشروع في Firestore.", edit: "تعديل", update: "حفظ التعديلات", cancelEdit: "إلغاء التعديل", delete: "حذف", language: "English"
   },
   en: {
     nav: ["Home","About","Services","Work","Contact"],
@@ -54,7 +56,7 @@ const copy = {
     cancel: "Cancel", logout: "Log out", empty: "No additional projects yet.",
     firebaseMissing: "Add Firebase configuration to the environment file to enable Firestore and admin tools.",
     loginError: "Login failed. Check Firebase settings and admin credentials.",
-    saved: "Project submitted to Firestore.", delete: "Delete", language: "العربية"
+    saved: "Project saved to Firestore.", edit: "Edit", update: "Save changes", cancelEdit: "Cancel edit", delete: "Delete", language: "العربية"
   }
 };
 
@@ -65,8 +67,10 @@ function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [form, setForm] = useState({email:"mohabkhaled207@gmail.com", password:"hoba01277093511"});
+  const [form, setForm] = useState({email:"", password:""});
   const [projectForm, setProjectForm] = useState({title:"", category:"", description:"", url:"", image:""});
+  const [editingId, setEditingId] = useState(null);
+  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -77,7 +81,15 @@ function App() {
 
   useEffect(() => {
     if (!firebaseReady || !auth) return;
-    return onAuthStateChanged(auth, setUser);
+    return onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser && currentUser.email?.toLowerCase() !== ADMIN_EMAIL) {
+        await signOut(auth);
+        setUser(null);
+        setError("هذا الحساب غير مصرح له بإدارة الموقع.");
+        return;
+      }
+      setUser(currentUser);
+    });
   }, []);
 
   useEffect(() => {
@@ -95,69 +107,58 @@ function App() {
     {icon:<Smartphone/>, title:rtl?"المتاجر الإلكترونية":"E-commerce", desc:rtl?"متاجر رقمية تسهّل عرض المنتجات والبيع":"Digital storefronts that make selling simple."}
   ];
 
-  async function loginWithGoogle() {
-    setError("");
+  async function login(e) {
+    e.preventDefault(); setError("");
     if (!firebaseReady || !auth) return setError(t.firebaseMissing);
+    if (form.email.trim().toLowerCase() !== ADMIN_EMAIL) {
+      setError("البريد الإلكتروني غير مصرح له بالدخول.");
+      return;
+    }
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithEmailAndPassword(auth, ADMIN_EMAIL, form.password);
       setLoginOpen(false);
       setAdminOpen(true);
-    } catch (err) {
-      const code = err?.code || "";
-      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request" || code === "auth/popup-blocked") {
-        // User closed or cancelled popup window — return quietly without error noise
-        return;
-      }
-      console.error("Google Auth error:", err);
-      setError(rtl ? "تعذر الدخول باستخدام Google: " + (err.message || "") : "Google Sign-In failed.");
+      setForm({email:"", password:""});
+    } catch {
+      setError(t.loginError);
     }
   }
 
-  async function login(e) {
-    e.preventDefault(); setError("");
-    if (!firebaseReady) return setError(t.firebaseMissing);
-    try {
-      await signInWithEmailAndPassword(auth, form.email, form.password);
-      setLoginOpen(false);
-      setAdminOpen(true);
-    } catch (err) {
-      const code = err?.code || "";
-      if (code === "auth/user-not-found") {
-        try {
-          await createUserWithEmailAndPassword(auth, form.email, form.password);
-          setLoginOpen(false);
-          setAdminOpen(true);
-          return;
-        } catch (createErr) {
-          console.error("Create user error:", createErr);
-        }
-      }
-      if (code === "auth/wrong-password" || code === "auth/invalid-credential") {
-        setError(rtl ? "كلمة المرور غير صحيحة، أو يمكنك تسجيل الدخول مباشرة عبر Google." : "Invalid credentials. Try signing in with Google.");
-      } else if (code === "auth/email-already-in-use") {
-        setError(rtl ? "البريد مسجل مسبقاً. أدخل كلمة المرور الصحيحة أو سجل بـ Google." : "Email already registered. Try Google Sign-In.");
-      } else {
-        setError(t.loginError);
-      }
-    }
+  function resetProjectForm() {
+    setProjectForm({title:"", category:"", description:"", url:"", image:""});
+    setEditingId(null);
+  }
+
+  function editProject(project) {
+    setProjectForm({title:project.title || "", category:project.category || "", description:project.description || "", url:project.url || "", image:project.image || ""});
+    setEditingId(project.id);
+    setError("");
+    setNotice("");
+    setAdminOpen(true);
+    setLoginOpen(false);
   }
 
   async function saveProject(e) {
     e.preventDefault(); setError(""); setNotice("");
-    if (!db || !user) return setError(t.firebaseMissing);
-    if (!/^https?:\/\//i.test(projectForm.url)) return setError("Project URL must start with https://");
+    if (!db || !isAdmin) return setError("يجب تسجيل الدخول بحساب الإدارة أولاً.");
+    if (!/^https?:\\/\\//i.test(projectForm.url)) return setError("Project URL must start with https://");
+    if (projectForm.image && !/^https?:\\/\\//i.test(projectForm.image)) return setError("Image URL must start with https://");
     setSaving(true);
     try {
-      await addDoc(collection(db, "portfolioProjects"), {...projectForm, createdAt:serverTimestamp(), createdBy:user.uid});
-      setProjectForm({title:"", category:"", description:"", url:"", image:""});
+      const payload = {...projectForm, updatedAt:serverTimestamp(), updatedBy:user.uid};
+      if (editingId) {
+        await updateDoc(doc(db, "portfolioProjects", editingId), payload);
+      } else {
+        await addDoc(collection(db, "portfolioProjects"), {...payload, createdAt:serverTimestamp(), createdBy:user.uid});
+      }
+      resetProjectForm();
       setNotice(t.saved);
     } catch { setError("Firestore save failed. Check your connection and security rules."); }
     finally { setSaving(false); }
   }
 
   async function removeProject(id) {
-    if (!db || !user || !window.confirm("Delete this project?")) return;
+    if (!db || !isAdmin || !window.confirm("Delete this project?")) return;
     try { await deleteDoc(doc(db, "portfolioProjects", id)); }
     catch { setError("Could not delete project."); }
   }
@@ -217,7 +218,7 @@ function App() {
           </div>
           <div className="project-info"><div><span className="project-category">{p.category}</span><h3>{p.title}</h3></div><a href={p.url} target="_blank" rel="noreferrer" className="text-link">{t.view}{arrow}</a></div>
           <p className="project-description">{p.description}</p>
-          {user && p.id && <button className="delete-project" onClick={()=>removeProject(p.id)}><Trash2 size={14}/>{t.delete}</button>}
+          {isAdmin && p.id && <div className="project-admin-actions"><button className="delete-project" onClick={()=>editProject(p)}>{t.edit}</button><button className="delete-project" onClick={()=>removeProject(p.id)}><Trash2 size={14}/>{t.delete}</button></div>}
         </article>)}</div>
         {projects.length===1&&<p className="coming-soon">{rtl?"هذه أولى خطوات المعرض — أضف مشاريعك القادمة من لوحة الإدارة.":"This is the first piece. Add future projects from the admin panel."}</p>}
       </section>
@@ -227,9 +228,9 @@ function App() {
 
     <footer><a className="brand" href="#home"><span className="brand-mark">MK</span><span><b>Mohab Khaled</b><small>DREAM. DESIGN. DEVELOP.</small></span></a><div className="footer-copy">© {new Date().getFullYear()} MOHAB KHALED. {t.footer}.</div><div className="footer-links"><a href="#work">WORK</a><a href="#contact">CONTACT</a><a className="social-link" href={wa} target="_blank" rel="noreferrer" aria-label="WhatsApp" title="WhatsApp"><MessageCircle size={18}/></a><a className="social-link" href="https://www.instagram.com/hobaaa_khaled?rpxt=MTRnazc0dnVzOThhbg==" target="_blank" rel="noreferrer" aria-label="Instagram" title="Instagram"><Instagram size={18}/></a><a className="social-link" href="https://www.facebook.com/share/19xgExeYK9/" target="_blank" rel="noreferrer" aria-label="Facebook" title="Facebook"><Facebook size={18}/></a><a className="social-link" href="https://www.tiktok.com/@mohab.k__" target="_blank" rel="noreferrer" aria-label="TikTok" title="TikTok"><Music2 size={18}/></a></div></footer>
 
-    {(loginOpen||adminOpen)&&<div className="modal-backdrop" onClick={()=>{setLoginOpen(false);setAdminOpen(false)}}><div className="modal" onClick={e=>e.stopPropagation()}>
-      <button className="modal-close" onClick={()=>{setLoginOpen(false);setAdminOpen(false)}}><X/></button>
-      {!user?<><div className="section-kicker">PRIVATE ACCESS</div><h2>{t.login}</h2><p className="muted">{t.firebaseMissing}</p><form onSubmit={login} className="admin-form"><label>{t.email}<input type="email" required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>{t.password}<input type="password" required value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label><button className="button primary" type="submit">{t.signIn}<LockKeyhole size={16}/></button><button type="button" className="button secondary" onClick={loginWithGoogle} style={{marginTop:"8px"}}>{rtl?"تسجيل الدخول باستخدام Google":"Sign in with Google"}</button></form></>:<><div className="section-kicker">CONTROL CENTER</div><h2>{t.admin}</h2><button className="logout" onClick={()=>signOut(auth)}><LogOut size={15}/>{t.logout}</button><form className="admin-form" onSubmit={saveProject}>{[["title","text"],["category","text"],["description","textarea"],["url","url"],["image","url"]].map(([key,type])=><label key={key}>{t[key]}{type==="textarea"?<textarea required value={projectForm[key]} onChange={e=>setProjectForm({...projectForm,[key]:e.target.value})}/>:<input required={key!=="image"} type={type} value={projectForm[key]} onChange={e=>setProjectForm({...projectForm,[key]:e.target.value})}/>}</label>)}<button className="button primary" disabled={saving} type="submit"><Save size={16}/>{saving?"...":t.save}</button></form></>}
+    {(loginOpen||adminOpen)&&<div className="modal-backdrop" onClick={()=>{setLoginOpen(false);setAdminOpen(false);resetProjectForm()}}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <button className="modal-close" onClick={()=>{setLoginOpen(false);setAdminOpen(false);resetProjectForm()}}><X/></button>
+      {!isAdmin?<><div className="section-kicker">PRIVATE ACCESS</div><h2>{t.login}</h2><form onSubmit={login} className="admin-form"><label>{t.email}<input type="email" autoComplete="username" placeholder={t.email} required value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>{t.password}<input type="password" autoComplete="current-password" placeholder={t.password} required value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label><button className="button primary" type="submit">{t.signIn}<LockKeyhole size={16}/></button></form></>:<><div className="section-kicker">CONTROL CENTER</div><h2>{t.admin}</h2><button className="logout" onClick={()=>signOut(auth)}><LogOut size={15}/>{t.logout}</button><form className="admin-form" onSubmit={saveProject}>{[["title","text"],["category","text"],["description","textarea"],["url","url"],["image","url"]].map(([key,type])=><label key={key}>{t[key]}{type==="textarea"?<textarea required value={projectForm[key]} onChange={e=>setProjectForm({...projectForm,[key]:e.target.value})}/>:<input required={key!=="image"} type={type} value={projectForm[key]} onChange={e=>setProjectForm({...projectForm,[key]:e.target.value})}/>}</label>)}<button className="button primary" disabled={saving} type="submit"><Save size={16}/>{saving?"...":editingId?t.update:t.save}</button>{editingId&&<button type="button" className="button secondary" onClick={resetProjectForm}>{t.cancelEdit}</button>}</form></>}
       {error&&<p className="form-error">{error}</p>}{notice&&<p className="form-success">{notice}</p>}
     </div></div>}
   </div>
