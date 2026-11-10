@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "PortfolioProject": {
+      "title": "Portfolio Project",
+      "description": "A project entry in the digital portfolio showcasing web design and development work.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 100,
+          "minLength": 1
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100,
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000,
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^https?://.+"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "featured": {
+          "type": "boolean"
+        }
+      },
+      "required": ["title", "category", "description", "url"]
+    }
+  },
+  "firestore": {
+    "/portfolioProjects/{projectId}": {
+      "schema": "PortfolioProject",
+      "description": "Collection of projects featured on the portfolio."
+    }
+  }
+}

@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function isValidPortfolioProject(data) {
+      return data.keys().hasAll(['title', 'category', 'description', 'url'])
+        && data.keys().hasOnly(['title', 'category', 'description', 'url', 'image', 'createdAt', 'createdBy', 'featured'])
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 100
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 100
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 1000
+        && data.url is string && data.url.size() >= 1 && data.url.size() <= 500 && data.url.matches('^https?://.+')
+        && (!('image' in data) || (data.image is string && data.image.size() <= 500))
+        && (!('createdBy' in data) || (data.createdBy is string && data.createdBy == request.auth.uid))
+        && (!('featured' in data) || data.featured is bool);
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /portfolioProjects/{projectId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidPortfolioProject(incoming());
+      allow update: if isSignedIn() && isValidPortfolioProject(incoming());
+      allow delete: if isSignedIn();
+    }
+  }
+}
