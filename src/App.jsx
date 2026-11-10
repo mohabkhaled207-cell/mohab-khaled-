@@ -141,8 +141,8 @@ function App() {
   async function saveProject(e) {
     e.preventDefault(); setError(""); setNotice("");
     if (!db || !isAdmin) return setError("يجب تسجيل الدخول بحساب الإدارة أولاً.");
-    if (!/^https?:\\/\\//i.test(projectForm.url)) return setError("Project URL must start with https://");
-    if (projectForm.image && !/^https?:\\/\\//i.test(projectForm.image)) return setError("Image URL must start with https://");
+    if (!(projectForm.url.startsWith("https://") || projectForm.url.startsWith("http://"))) return setError("Project URL must start with https://");
+    if (projectForm.image && !(projectForm.image.startsWith("https://") || projectForm.image.startsWith("http://"))) return setError("Image URL must start with https://");
     setSaving(true);
     try {
       const payload = {...projectForm, updatedAt:serverTimestamp(), updatedBy:user.uid};
