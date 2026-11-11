@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ArrowUpLeft, ArrowUpRight, ExternalLink, Facebook, Instagram, Music2, Menu, MessageCircle, Monitor, Palette, Smartphone, X, LockKeyhole, Trash2, LogOut, Save, Languages } from "lucide-react";
 import { auth, db, firebaseReady } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 
 const ADMIN_EMAIL = "mohabkhaled207@gmail.com";
 
@@ -147,7 +147,8 @@ function App() {
     if (projectForm.image && !(projectForm.image.startsWith("https://") || projectForm.image.startsWith("http://"))) return setError("Image URL must start with https://");
     setSaving(true);
     try {
-      const payload = {...projectForm, updatedAt:serverTimestamp(), updatedBy:user.uid};
+      const cleanForm = Object.fromEntries(Object.entries(projectForm).map(([key, value]) => [key, value.trim()]));
+      const payload = {...cleanForm, updatedAt:serverTimestamp(), updatedBy:user.uid};
       if (editingId) {
         await updateDoc(doc(db, "portfolioProjects", editingId), payload);
       } else {
@@ -155,8 +156,15 @@ function App() {
       }
       resetProjectForm();
       setNotice(t.saved);
-    } catch { setError("Firestore save failed. Check your connection and security rules."); }
-    finally { setSaving(false); }
+    } catch (err) {
+      setError(err?.code === "permission-denied"
+        ? "تم رفض الحفظ من Firestore. تحقق من صلاحية حساب المالك وقواعد قاعدة البيانات."
+        : err?.code === "unavailable"
+          ? "تعذر الاتصال بـ Firestore. تحقق من الإنترنت ثم حاول مرة أخرى."
+          : err?.code === "not-found"
+            ? "المشروع المراد تعديله لم يعد موجوداً. حدّث الصفحة ثم حاول مجدداً."
+            : "فشل حفظ المشروع في Firestore. لم يتم تأكيد الحفظ؛ تحقق من الاتصال والصلاحيات.");
+    } finally { setSaving(false); }
   }
 
   async function removeProject(id) {
