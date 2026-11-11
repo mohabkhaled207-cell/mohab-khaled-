@@ -142,20 +142,26 @@ function App() {
 
   async function saveProject(e) {
     e.preventDefault(); setError(""); setNotice("");
-    if (!db || !isAdmin) return setError("يجب تسجيل الدخول بحساب الإدارة أولاً.");
-    if (!(projectForm.url.startsWith("https://") || projectForm.url.startsWith("http://"))) return setError("Project URL must start with https://");
-    if (projectForm.image && !(projectForm.image.startsWith("https://") || projectForm.image.startsWith("http://"))) return setError("Image URL must start with https://");
+    if (!db || !isAdmin || !user?.uid) return setError("يجب تسجيل الدخول بحساب الإدارة أولاً.");
+    const cleanForm = Object.fromEntries(Object.entries(projectForm).map(([key, value]) => [key, value.trim()]));
+    if (!cleanForm.title || !cleanForm.category || !cleanForm.description || !cleanForm.url) return setError("أكمل اسم المشروع والتصنيف والوصف والرابط.");
+    const validHttpUrl = value => {
+      try { const parsed = new URL(value); return parsed.protocol === "https:" || parsed.protocol === "http:"; }
+      catch { return false; }
+    };
+    if (!validHttpUrl(cleanForm.url)) return setError("رابط المشروع يجب أن يبدأ بـ https:// أو http://");
+    if (cleanForm.image && !validHttpUrl(cleanForm.image)) return setError("رابط الصورة يجب أن يبدأ بـ https:// أو http://");
     setSaving(true);
     try {
-      const cleanForm = Object.fromEntries(Object.entries(projectForm).map(([key, value]) => [key, value.trim()]));
       const payload = {...cleanForm, updatedAt:serverTimestamp(), updatedBy:user.uid};
       if (editingId) {
         await updateDoc(doc(db, "portfolioProjects", editingId), payload);
+        setNotice("تم حفظ تعديلات المشروع بنجاح في Firestore.");
       } else {
         await addDoc(collection(db, "portfolioProjects"), {...payload, createdAt:serverTimestamp(), createdBy:user.uid});
+        setNotice(t.saved);
       }
       resetProjectForm();
-      setNotice(t.saved);
     } catch (err) {
       setError(err?.code === "permission-denied"
         ? "تم رفض الحفظ من Firestore. تحقق من صلاحية حساب المالك وقواعد قاعدة البيانات."
