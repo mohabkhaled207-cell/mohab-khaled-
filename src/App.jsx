@@ -74,6 +74,7 @@ function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const t = copy[lang];
   const rtl = lang === "ar";
   const wa = "https://wa.me/hobaaa_khaled?s=t";
@@ -94,11 +95,11 @@ function App() {
 
   useEffect(() => {
     if (!firebaseReady || !db) return;
-    const q = query(collection(db, "portfolioProjects"), orderBy("createdAt", "desc"));
-    return onSnapshot(q, snap => {
+    return onSnapshot(collection(db, "portfolioProjects"), snap => {
       const remote = snap.docs.map(d => ({id:d.id, ...d.data()}));
+      remote.sort((a,b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
       setProjects([initialProject, ...remote.filter(p => p.url !== initialProject.url)]);
-    }, () => setError("Firestore read failed. Check security rules."));
+    }, err => setError(err?.code === "permission-denied" ? "ليس لديك صلاحية قراءة المشاريع. راجع قواعد Firestore." : "تعذر تحميل المشاريع من Firestore. تحقق من الاتصال وإعدادات Firebase."));
   }, []);
 
   const services = [
@@ -115,7 +116,8 @@ function App() {
       return;
     }
     try {
-      await signInWithEmailAndPassword(auth, ADMIN_EMAIL, form.password);
+      const credential = await signInWithEmailAndPassword(auth, ADMIN_EMAIL, form.password);
+      setUser(credential.user);
       setLoginOpen(false);
       setAdminOpen(true);
       setForm({email:"", password:""});
@@ -158,9 +160,16 @@ function App() {
   }
 
   async function removeProject(id) {
-    if (!db || !isAdmin || !window.confirm("Delete this project?")) return;
-    try { await deleteDoc(doc(db, "portfolioProjects", id)); }
-    catch { setError("Could not delete project."); }
+    if (!db || !isAdmin || !id || deletingId) return;
+    if (!window.confirm("هل تريد حذف هذا المشروع نهائياً؟")) return;
+    setError(""); setNotice(""); setDeletingId(id);
+    try {
+      await deleteDoc(doc(db, "portfolioProjects", id));
+      setNotice("تم حذف المشروع من Firestore بنجاح.");
+      if (editingId === id) resetProjectForm();
+    } catch (err) {
+      setError(err?.code === "permission-denied" ? "تم رفض الحذف. تأكد من تسجيل الدخول بحساب المالك ونشر قواعد Firestore الصحيحة." : err?.code === "not-found" ? "المشروع محذوف بالفعل أو لم يعد موجوداً." : "فشل حذف المشروع من Firestore. تحقق من الاتصال والصلاحيات.");
+    } finally { setDeletingId(null); }
   }
 
   return <div className="app" dir={rtl?"rtl":"ltr"}>
@@ -218,7 +227,7 @@ function App() {
           </div>
           <div className="project-info"><div><span className="project-category">{p.category}</span><h3>{p.title}</h3></div><a href={p.url} target="_blank" rel="noreferrer" className="text-link">{t.view}{arrow}</a></div>
           <p className="project-description">{p.description}</p>
-          {isAdmin && p.id && <div className="project-admin-actions"><button className="delete-project" onClick={()=>editProject(p)}>{t.edit}</button><button className="delete-project" onClick={()=>removeProject(p.id)}><Trash2 size={14}/>{t.delete}</button></div>}
+          {isAdmin && p.id && <div className="project-admin-actions"><button className="delete-project" onClick={()=>editProject(p)}>{t.edit}</button><button className="delete-project" disabled={Boolean(deletingId)} onClick={()=>removeProject(p.id)}><Trash2 size={14}/>{deletingId===p.id?"...":t.delete}</button></div>}
         </article>)}</div>
         {projects.length===1&&<p className="coming-soon">{rtl?"هذه أولى خطوات المعرض — أضف مشاريعك القادمة من لوحة الإدارة.":"This is the first piece. Add future projects from the admin panel."}</p>}
       </section>
